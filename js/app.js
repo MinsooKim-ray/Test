@@ -375,6 +375,12 @@
 
   if (window.OJT_DATA) {
     start(window.OJT_DATA);
+  } else if (window.OJT_ENC) {
+    // 단일 HTML 암호화 파일: 데이터가 파일 안에 포함됨
+    var savedPw = null;
+    try { savedPw = sessionStorage.getItem("ojtGuide.pw"); } catch (e) { /* ignore */ }
+    if (savedPw) decrypt(window.OJT_ENC, savedPw).then(start).catch(function () { lockScreen(window.OJT_ENC); });
+    else lockScreen(window.OJT_ENC);
   } else {
     fetch("data.enc.json", { cache: "no-cache" }).then(function (r) {
       if (!r.ok) throw new Error("no data");
