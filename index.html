@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="인프라 OJT 내용을 업무 가이드로 정리한 웹앱">
+  <meta name="theme-color" content="#1f4e79">
+  <title>인프라 OJT 가이드</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="menuBtn" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+    <a class="brand" href="#home"><span class="logo">IG</span><span class="brand-text">인프라 OJT 가이드</span></a>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="용어·시스템·절차 검색 (예: MCA, RTO, 방화벽)" aria-label="전체 검색" autocomplete="off">
+    </div>
+    <button class="icon-btn" id="themeBtn" aria-label="테마 전환" title="테마 전환">◐</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="섹션">
+      <a href="#home" data-route="home">🏠 홈</a>
+      <a href="#principles" data-route="principles">🧭 핵심 원칙</a>
+      <a href="#infra" data-route="infra">🏢 인프라 구조</a>
+      <a href="#flows" data-route="flows">🔀 업무 흐름</a>
+      <a href="#glossary" data-route="glossary">📖 용어·시스템 사전</a>
+      <a href="#nextit" data-route="nextit">🚀 넥스트 IT</a>
+      <a href="#cloud" data-route="cloud">☁️ 클라우드</a>
+      <a href="#process" data-route="process">📋 운영 프로세스</a>
+      <a href="#rnr" data-route="rnr">🤝 협업 R&amp;R</a>
+      <a href="#issues" data-route="issues">🧩 진행 과제·대안</a>
+      <a href="#tips" data-route="tips">💡 실무 팁</a>
+      <a href="#verify" data-route="verify">⚠️ 확인 필요</a>
+      <a href="#learn" data-route="learn">✅ 학습 로드맵</a>
+      <a href="#quiz" data-route="quiz">🎯 셀프 퀴즈</a>
+      <div class="side-foot">
+        <button class="link-btn" id="exportBtn">내 진도·메모 내보내기</button>
+        <label class="link-btn">가져오기<input type="file" id="importInput" accept="application/json" hidden></label>
+      </div>
+    </nav>
+    <div class="scrim" id="scrim"></div>
+
+    <main id="app" tabindex="-1">
+      <div class="loading">불러오는 중…</div>
+    </main>
+  </div>
+
+  <!-- 암호화 빌드(dist)에서는 아래 data.js 줄이 제거되고 data.enc.json 을 사용합니다 -->
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

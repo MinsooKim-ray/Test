@@ -1,0 +1,5 @@
+dist/
+node_modules/
+.DS_Store
+# 평문 데이터는 공개 저장소에 올리지 않음(로컬 보관)
+js/data.js

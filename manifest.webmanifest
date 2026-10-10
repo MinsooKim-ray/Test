@@ -1,0 +1,14 @@
+{
+  "name": "인프라 OJT 가이드",
+  "short_name": "OJT 가이드",
+  "description": "증권사 인프라 관리·운영 OJT 업무 가이드",
+  "start_url": "./index.html#home",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1f4e79",
+  "lang": "ko",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
