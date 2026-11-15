@@ -65,7 +65,8 @@ def parse_response(xml_text):
         hint = next((ERROR_HINTS[x] for x in parts if x in ERROR_HINTS), None)
         raise ApiError(hint or " / ".join(x for x in parts if x) or "API 인증 오류")
     code = (root.findtext(".//resultCode") or "").strip()
-    if code and code not in ("00", "000", "03"):  # 03 = 데이터 없음
+    # 실제 응답(2026-11 확인): 성공은 "000". 데이터가 없어도 "000" + 빈 <items/> 로 온다.
+    if code and code not in ("00", "000", "03"):
         msg = (root.findtext(".//resultMsg") or "").strip()
         raise ApiError(ERROR_HINTS.get(msg, f"API 오류 {code}: {msg}"))
     total = _int(root.findtext(".//totalCount") or "0")
@@ -170,6 +171,15 @@ def months_to_fetch(lawd, force=False):
 
 
 # ---------- 백그라운드 수집 작업 ----------
+def _empty_error(lawd):
+    """폐지된 시군구 코드는 오류 없이 0건만 돌려준다(실제 확인). 그대로 두면 빈 화면이 된다."""
+    with db() as con:
+        if con.execute("SELECT 1 FROM trades WHERE lawd=? LIMIT 1", (lawd,)).fetchone():
+            return None
+    return ("이 지역 코드로는 10년간 거래가 한 건도 없습니다. 행정구역 개편으로 코드가 바뀌었을 수 "
+            "있으니 regions.json 의 코드를 확인하세요.")
+
+
 jobs = {}
 _jobs_lock = threading.Lock()
 
@@ -180,7 +190,8 @@ def start_load(key, lawd, force=False):
         if job and job["running"]:
             return job
         todo = months_to_fetch(lawd, force)
-        job = jobs[lawd] = {"total": len(todo), "done": 0, "error": None,
+        job = jobs[lawd] = {"total": len(todo), "done": 0,
+                            "error": None if todo else _empty_error(lawd),
                             "running": bool(todo)}
     if todo:
         threading.Thread(target=_run, args=(key, lawd, todo, job), daemon=True).start()
@@ -198,4 +209,5 @@ def _run(key, lawd, todo, job):
             job["error"] = str(e)
     with ThreadPoolExecutor(max_workers=6) as ex:
         list(ex.map(one, todo))
+    job["error"] = job["error"] or _empty_error(lawd)
     job["running"] = False

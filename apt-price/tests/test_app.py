@@ -27,6 +27,21 @@ class ParseTest(unittest.TestCase):
                          (123000, 202403, 7, 12, 2015, 84.97))
         self.assertEqual((t["cid"], t["canceled"], trades[1]["canceled"]), ("11680-1", 0, 1))
 
+    def test_real_response(self):
+        """실제 API 응답(강남구 2026-08, 3건으로 줄임). 빈 값은 공백 한 칸으로 온다."""
+        body = (Path(__file__).parent / "real_response.xml").read_text(encoding="utf-8")
+        total, trades = molit.parse_response(body)
+        self.assertEqual((total, len(trades)), (100, 3))
+        self.assertEqual(trades[0], {
+            "cid": "11680-279", "apt": "삼익대청아파트", "dong": "개포동", "area": 51.12,
+            "price": 205000, "ym": 202608, "day": 22, "floor": 6, "build": 1992, "canceled": 0})
+        self.assertEqual([t["canceled"] for t in trades], [0, 1, 0])  # cdealType "O" = 해제
+        # 데이터가 없는 달·폐지된 지역 코드: 오류가 아니라 000 + 빈 items
+        empty = ('<?xml version="1.0" encoding="utf-8" standalone="yes"?><response><header>'
+                 "<resultCode>000</resultCode><resultMsg>OK</resultMsg></header><body><items/>"
+                 "<numOfRows>2</numOfRows><pageNo>1</pageNo><totalCount>0</totalCount></body></response>")
+        self.assertEqual(molit.parse_response(empty), (0, []))
+
     def test_korean_tags(self):
         item = ("<item><아파트>옛아파트</아파트><거래금액>50,000</거래금액><년>2019</년><월>11</월><일>3</일>"
                 "<전용면적>59.9</전용면적><층>-1</층><건축년도>1999</건축년도><법정동>역삼동</법정동><지번>10</지번></item>")
@@ -65,6 +80,46 @@ class ParseTest(unittest.TestCase):
         from datetime import date
         yms = molit.month_list(date(2026, 2, 10))
         self.assertEqual((len(yms), yms[0], yms[-1]), (120, 201603, 202602))
+
+
+class LoadTest(unittest.TestCase):
+    def test_region_with_no_trades_reports_error(self):
+        """폐지된 코드는 0건만 온다 -> 조용히 '완료'가 아니라 안내 메시지를 낸다."""
+        import tempfile
+        old = molit.DB_PATH
+        with tempfile.TemporaryDirectory() as d:
+            molit.DB_PATH = Path(d) / "data" / "cache.db"
+            try:
+                job = {"total": 2, "done": 0, "error": None, "running": True}
+                orig = molit.fetch_month
+                molit.fetch_month = lambda key, lawd, ym: []
+                try:
+                    molit._run("k", "41190", [202609, 202610], job)
+                finally:
+                    molit.fetch_month = orig
+                self.assertEqual((job["done"], job["running"]), (2, False))
+                self.assertIn("regions.json", job["error"])
+                todo, molit.months_to_fetch = molit.months_to_fetch, lambda lawd, force=False: []
+                try:  # 전부 캐시된 뒤 다시 선택해도 같은 안내
+                    self.assertIn("regions.json", molit.start_load("k", "41190")["error"])
+                finally:
+                    molit.months_to_fetch = todo
+                molit.store_month("41192", 202609, molit.parse_response(xml([ITEM.format(cancel="")], 1))[1])
+                self.assertIsNone(molit._empty_error("41192"))
+            finally:
+                molit.DB_PATH = old
+                molit.jobs.pop("41190", None)
+
+    def test_regions_file(self):
+        import json
+        regions = json.loads((Path(__file__).parent.parent / "regions.json").read_text(encoding="utf-8"))
+        codes = [r["code"] for r in regions]
+        self.assertEqual(len(codes), len(set(codes)))
+        self.assertTrue(all(len(c) == 5 and c.isdigit() for c in codes))
+        # 폐지되어 API가 0건만 돌려주는 코드(2026-11 실제 확인)는 없어야 한다
+        dead = {"41190", "41590", "47720", "28110", "28140", "28260", "48245"}
+        self.assertFalse(dead & set(codes))
+        self.assertFalse([c for c in codes if c[:2] in ("42", "45")])
 
 
 class ModelTest(unittest.TestCase):
