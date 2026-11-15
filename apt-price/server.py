@@ -100,8 +100,9 @@ def analysis(lawd, cid, area):
         "since": f"{build}년 입주 이후" if build * 100 + 1 > first_ym else "최근 10년",
         "from_ym": first_ym, "now_ym": model.ym_of(now_mi()),
         "canceled": len(rows) - len(valid),
+        # odd: 주변 거래와 차이가 커서 계산에서 뺀 특이 거래
         "trades": [{"ym": r["ym"], "day": r["day"], "price": r["price"], "floor": r["floor"],
-                    "area": r["area"]} for r in valid],
+                    "area": r["area"], "odd": odd} for r, odd in zip(valid, res.pop("outliers"))],
     })
     return res
 

@@ -101,6 +101,7 @@ th { color: var(--text-2); font-weight: 600; }
       <div class="tiles" id="tiles"></div>
       <div class="legend">
         <span><i style="width:8px;height:8px;border-radius:50%;background:var(--series-1);opacity:.5"></i>실거래</span>
+        <span><i style="width:6px;height:6px;border-radius:50%;border:1.2px solid var(--text-3)"></i>특이 거래(제외)</span>
         <span><i style="width:18px;height:2px;background:var(--series-1)"></i>월 중위가</span>
         <span><i style="width:18px;border-top:2px dashed var(--series-2)"></i>예측</span>
         <span><i style="width:14px;height:10px;background:var(--series-2);opacity:.2"></i>예측 구간(80%)</span>
@@ -194,6 +195,7 @@ async function show(area) {
   $('#resErr').textContent = d.error || '';
   if (d.error) return;
   $('#meta').textContent += ` · 분석 기간: ${d.since} · 거래 ${d.trades.length}건` + (d.canceled ? ` (해제 ${d.canceled}건 제외)` : '');
+  const odd = d.trades.filter(t => t.odd).length;
 
   const tile = (k, f, base) => el('div', { className: 'tile' },
     el('div', { className: 'k', textContent: k }),
@@ -205,8 +207,9 @@ async function show(area) {
   const bt = d.backtest;
   const basis = [
     `현재 시세: ${d.window ? `최근 ${d.window}개월` : '전체 기간'} 거래 ${d.n_used}건을 지역 시세 흐름으로 보정해 최근 거래에 가중.`,
-    `적용 상승률: 연 ${pct(d.g)} (단지 장기 추세 ${pct(d.g_long)}, 지역 최근 3년 추세 ${pct(d.g_recent)}의 평균, -10%~+12%로 제한).`,
-    `예측 구간: 과거 검증에서 실제로 빗나간 정도에 맞춰 기본 폭의 ${d.k.toFixed(2)}배로 설정` +
+    `예측 중심값: 향후 1년은 이 지역의 최근 12개월 시세 변화율 ${pct(d.g)}를 적용(-10%~+12%로 제한). 1년 이후는 방향을 예측하지 않고 같은 수준으로 두며 구간만 넓힙니다.`,
+    ...(odd ? [`특이 거래 ${odd}건(주변 거래보다 25% 넘게 높거나 낮음)은 차트에 회색으로 표시하고 계산에서 제외.`] : []),
+    `예측 구간: 과거 검증에서 실제로 빗나간 정도에 맞춰 넓힘. 1년 구간은 기본 폭의 ${d.k.toFixed(2)}배` +
       (d.k_region ? ` (이 지역 검증 ${d.k_n}건 기준 ${d.k_region.toFixed(2)}배에 단지 자체 오차를 반영).` : ' (지역 검증 자료가 부족해 기본 배율 사용).'),
     bt ? `검증: 과거 ${bt.n}개 시점에서 같은 방법으로 1년 뒤를 예측했을 때 평균 오차 ${(bt.mape * 100).toFixed(1)}%, 보정된 구간 적중 ${Math.round(bt.coverage * bt.n)}/${bt.n}회.`
        : '검증: 거래 이력이 짧아 과거 시점 검증을 할 수 없습니다. 예측 신뢰도가 낮습니다.',
@@ -214,7 +217,7 @@ async function show(area) {
   $('#basis').replaceChildren(...basis.map(t => el('li', { textContent: t })));
   $('#rows').replaceChildren(...d.trades.slice(-15).reverse().map(t => el('tr', {},
     el('td', { textContent: ymd(t) }), el('td', { textContent: t.area.toFixed(2) + '㎡' }),
-    el('td', { textContent: t.floor + '층' }), el('td', { textContent: won(t.price) }))));
+    el('td', { textContent: t.floor + '층' }), el('td', { textContent: won(t.price) + (t.odd ? ' (특이)' : '') }))));
   draw(d);
 }
 
@@ -222,7 +225,7 @@ function draw(d) {
   const W = 900, H = 380, L = 56, R = 70, T = 14, B = 30, c = $('#chart');
   c.replaceChildren();
   const now = mi(d.now_ym) + 0.5;
-  const pts = d.trades.map(t => ({ x: mi(t.ym) + (t.day - 1) / 31, y: t.price, tip: `${ymd(t)} · ${t.floor}층 · ${won(t.price)}` }));
+  const pts = d.trades.map(t => ({ x: mi(t.ym) + (t.day - 1) / 31, y: t.price, odd: t.odd, tip: `${ymd(t)} · ${t.floor}층 · ${won(t.price)}` + (t.odd ? ' · 특이 거래(계산 제외)' : '') }));
   const fc = [{ ...d.now, months: 0 }, ...d.forecasts];
   const x0 = Math.floor(pts[0].x), x1 = now + 36;
   const ys = [...pts.map(p => p.y), ...fc.flatMap(f => [f.low, f.high])];
@@ -245,7 +248,8 @@ function draw(d) {
   const fx = f => X(now + f.months);
   c.append(svg('polygon', { fill: 'var(--series-2)', opacity: .18,
     points: [...fc.map(f => `${fx(f)},${Y(f.high)}`), ...fc.slice().reverse().map(f => `${fx(f)},${Y(f.low)}`)].join(' ') }));
-  for (const p of pts) c.append(svg('circle', { cx: X(p.x), cy: Y(p.y), r: 3, fill: 'var(--series-1)', opacity: .45 }));
+  for (const p of pts) c.append(svg('circle', p.odd ? { cx: X(p.x), cy: Y(p.y), r: 3, fill: 'none', stroke: 'var(--text-3)', 'stroke-width': 1.2 }
+    : { cx: X(p.x), cy: Y(p.y), r: 3, fill: 'var(--series-1)', opacity: .45 }));
   c.append(svg('polyline', { fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round',
     points: d.monthly.map(m => `${X(mi(m.ym) + .5)},${Y(m.median)}`).join(' ') }));
   c.append(svg('polyline', { fill: 'none', stroke: 'var(--series-2)', 'stroke-width': 2, 'stroke-dasharray': '6 4',

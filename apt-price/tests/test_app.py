@@ -133,12 +133,14 @@ class ModelTest(unittest.TestCase):
         region, trades = self.series(0.05)
         r = model.analyze(region, trades, 119)
         self.assertAlmostEqual(r["g"], 0.05, places=2)
+        self.assertFalse(any(r["outliers"]))
         truth = 24000 * math.exp(0.05 * 119 / 12)
         self.assertLess(abs(r["now"]["base"] / truth - 1), 0.02)
         f1 = r["forecasts"][0]
         self.assertLess(abs(f1["base"] / (truth * math.exp(0.05)) - 1), 0.03)
         self.assertTrue(f1["low"] < f1["base"] < f1["high"])
-        # 먼 미래일수록 구간이 넓어진다
+        # 1년 이후는 방향을 예측하지 않는다: 중심값은 그대로, 구간만 넓어진다
+        self.assertEqual({f["base"] for f in r["forecasts"]}, {f1["base"]})
         widths = [f["high"] / f["low"] for f in r["forecasts"]]
         self.assertEqual(widths, sorted(widths))
         self.assertLess(r["backtest"]["mape"], 0.03)
@@ -158,7 +160,7 @@ class ModelTest(unittest.TestCase):
     def test_band_calibration(self):
         region, trades = self.series(0.05)
         idx = model.region_index(region, 119)
-        a, b = model.forecast(trades, idx, 119), model.forecast(trades, idx, 119, k=2.0)
+        a, b = model.forecast(trades, idx, 119), model.forecast(trades, idx, 119, k={12: 2.0, 24: 2.0, 36: 2.0})
         self.assertEqual(a["now"], b["now"])  # 현재 시세 구간은 그대로
         for fa, fb in zip(a["forecasts"], b["forecasts"]):
             self.assertEqual(fa["base"], fb["base"])
@@ -180,13 +182,27 @@ class ModelTest(unittest.TestCase):
                    for m in range(120) for _ in range(2)] for g in range(8)]
         region = [(m, p / 84) for g in groups for m, p in g]
         idx = model.region_index(region, 119)
-        k, n = model.region_k(groups, idx, 119)
-        self.assertGreater(k, 1.0)
-        self.assertGreaterEqual(n, 30)
-        resid = [abs(r) for g in groups for r in model.backtest(g, idx, 119)["resid"]]
-        cover = sum(r <= model.Z80 * k for r in resid) / len(resid)
-        self.assertTrue(0.75 <= cover <= 0.88, cover)
-        self.assertIsNone(model.region_k(groups[:1], idx, 119))  # 잔차 30개 미만
+        calib = model.region_k(groups, idx, 119)
+        for h in model.HORIZONS:
+            k, n = calib[h]
+            self.assertGreater(k, 1.0)
+            self.assertGreaterEqual(n, 30)
+            resid = [abs(r) for g in groups for r in model.backtest(g, idx, 119)["resid"][h]]
+            cover = sum(r <= model.Z80 * k for r in resid) / len(resid)
+            self.assertTrue(0.75 <= cover <= 0.88, (h, cover))
+        self.assertEqual(model.region_k(groups[:1], idx, 119), {})  # 잔차 30개 미만
+
+    def test_outlier_excluded(self):
+        """시세보다 40% 낮은 거래 한 건은 표시만 하고 계산에서 뺀다."""
+        region, trades = self.series(0.05)
+        base = model.analyze(region, trades, 119)
+        m, p = trades[-2]
+        odd = trades[:-2] + [(m, p * 0.6)] + trades[-1:]
+        r = model.analyze(region, odd, 119)
+        self.assertEqual([i for i, f in enumerate(r["outliers"]) if f], [len(odd) - 2])
+        self.assertLess(abs(r["now"]["base"] / base["now"]["base"] - 1), 0.01)
+        # 거래가 드문 단지(주변 거래 5건 미만)는 판정하지 않는다
+        self.assertFalse(any(model.outlier_flags([(0, 100), (1, 50), (2, 100)], {0: 1, 1: 1, 2: 1})))
 
     def test_too_few_trades(self):
         self.assertIsNone(model.analyze([], [(100, 50000), (101, 51000)], 119))
