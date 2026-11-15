@@ -206,7 +206,9 @@ async function show(area) {
   const basis = [
     `현재 시세: ${d.window ? `최근 ${d.window}개월` : '전체 기간'} 거래 ${d.n_used}건을 지역 시세 흐름으로 보정해 최근 거래에 가중.`,
     `적용 상승률: 연 ${pct(d.g)} (단지 장기 추세 ${pct(d.g_long)}, 지역 최근 3년 추세 ${pct(d.g_recent)}의 평균, -10%~+12%로 제한).`,
-    bt ? `검증: 과거 ${bt.n}개 시점에서 같은 방법으로 1년 뒤를 예측했을 때 평균 오차 ${(bt.mape * 100).toFixed(1)}%, 예측 구간 적중 ${Math.round(bt.coverage * bt.n)}/${bt.n}회.`
+    `예측 구간: 과거 검증에서 실제로 빗나간 정도에 맞춰 기본 폭의 ${d.k.toFixed(2)}배로 설정` +
+      (d.k_region ? ` (이 지역 검증 ${d.k_n}건 기준 ${d.k_region.toFixed(2)}배에 단지 자체 오차를 반영).` : ' (지역 검증 자료가 부족해 기본 배율 사용).'),
+    bt ? `검증: 과거 ${bt.n}개 시점에서 같은 방법으로 1년 뒤를 예측했을 때 평균 오차 ${(bt.mape * 100).toFixed(1)}%, 보정된 구간 적중 ${Math.round(bt.coverage * bt.n)}/${bt.n}회.`
        : '검증: 거래 이력이 짧아 과거 시점 검증을 할 수 없습니다. 예측 신뢰도가 낮습니다.',
   ];
   $('#basis').replaceChildren(...basis.map(t => el('li', { textContent: t })));
@@ -233,7 +235,7 @@ function draw(d) {
 
   for (let v = lo; v <= hi; v += step) {
     line([L, Y(v), W - R, Y(v)], { stroke: 'var(--border)', 'stroke-width': 1 });
-    text(L - 8, Y(v) + 4, won(v, true), { 'text-anchor': 'end' });
+    text(L - 8, Y(v) + 4, v ? won(v, true) : '0', { 'text-anchor': 'end' });
   }
   const every = (x1 - x0) / 12 > 8 ? 2 : 1;
   for (let m = Math.ceil(x0 / 12) * 12; m <= x1; m += 12 * every) text(X(m), H - 8, m / 12 + '', { 'text-anchor': 'middle' });

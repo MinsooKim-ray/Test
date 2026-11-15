@@ -155,6 +155,39 @@ class ModelTest(unittest.TestCase):
         truth = 24000 * math.exp(0.06 * 119 / 12)
         self.assertLess(abs(r["now"]["base"] / truth - 1), 0.05)
 
+    def test_band_calibration(self):
+        region, trades = self.series(0.05)
+        idx = model.region_index(region, 119)
+        a, b = model.forecast(trades, idx, 119), model.forecast(trades, idx, 119, k=2.0)
+        self.assertEqual(a["now"], b["now"])  # 현재 시세 구간은 그대로
+        for fa, fb in zip(a["forecasts"], b["forecasts"]):
+            self.assertEqual(fa["base"], fb["base"])
+            self.assertAlmostEqual(math.log(fb["high"] / fb["base"]) / math.log(fa["high"] / fa["base"]), 2, places=2)
+        # 배율은 1 미만으로 내려가지 않고, 잔차가 클수록 커진다
+        self.assertEqual(model.band_k([0.1, -0.2], 1.0), 1.0)
+        self.assertGreater(model.band_k([3, -3, 3, -3, 3, -3], 1.5), 2.0)
+        self.assertAlmostEqual(model.band_k([], 1.7), 1.7)
+
+    def test_region_k_targets_80_percent(self):
+        """구간이 실제보다 좁은 지역(급등락)에서는 지역 배율이 1보다 커지고,
+        그 배율로 넓힌 구간은 검증 잔차의 약 80%를 덮는다."""
+        import random
+        rnd = random.Random(7)
+        level = [0.0]
+        for m in range(1, 120):  # 추세가 3년마다 뒤집히는 시장
+            level.append(level[-1] + (0.02 if (m // 36) % 2 == 0 else -0.012) + rnd.gauss(0, 0.01))
+        groups = [[(m, 30000 * (1 + g / 10) * math.exp(level[m] + rnd.gauss(0, 0.03)))
+                   for m in range(120) for _ in range(2)] for g in range(8)]
+        region = [(m, p / 84) for g in groups for m, p in g]
+        idx = model.region_index(region, 119)
+        k, n = model.region_k(groups, idx, 119)
+        self.assertGreater(k, 1.0)
+        self.assertGreaterEqual(n, 30)
+        resid = [abs(r) for g in groups for r in model.backtest(g, idx, 119)["resid"]]
+        cover = sum(r <= model.Z80 * k for r in resid) / len(resid)
+        self.assertTrue(0.75 <= cover <= 0.88, cover)
+        self.assertIsNone(model.region_k(groups[:1], idx, 119))  # 잔차 30개 미만
+
     def test_too_few_trades(self):
         self.assertIsNone(model.analyze([], [(100, 50000), (101, 51000)], 119))
 

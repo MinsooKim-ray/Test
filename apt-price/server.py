@@ -61,17 +61,35 @@ def complexes(lawd, q):
     return res
 
 
+_calib = {}  # lawd -> (지역 거래 수, region_k 결과). 거래 수가 바뀌면 다시 계산한다.
+
+
+def calibration(lawd, con, region):
+    if lawd in _calib and _calib[lawd][0] == len(region):
+        return _calib[lawd][1]
+    groups = defaultdict(list)
+    for r in con.execute("SELECT cid, CAST(area AS INT) a, ym, price FROM trades "
+                         "WHERE lawd=? AND canceled=0", (lawd,)):
+        groups[(r["cid"], r["a"])].append((model.mi_of(r["ym"]), r["price"]))
+    # 거래가 충분한 단지·평형 위주로 최대 80개
+    top = sorted((g for g in groups.values() if len(g) >= 40), key=len, reverse=True)[:80]
+    res = model.region_k(top, model.region_index(region, now_mi()), now_mi())
+    _calib[lawd] = (len(region), res)
+    return res
+
+
 def analysis(lawd, cid, area):
     with molit.db() as con:
         region = [(model.mi_of(r[0]), r[1]) for r in con.execute(
             "SELECT ym, price/area FROM trades WHERE lawd=? AND canceled=0", (lawd,))]
+        calib = calibration(lawd, con, region)
         rows = con.execute(
             "SELECT * FROM trades WHERE lawd=? AND cid=? AND CAST(area AS INT)=? "
             "ORDER BY ym, day", (lawd, cid, area)).fetchall()
     if not rows:
         return {"error": "해당 평형의 거래가 없습니다."}
     valid = [r for r in rows if not r["canceled"]]
-    res = model.analyze(region, [(model.mi_of(r["ym"]), r["price"]) for r in valid], now_mi())
+    res = model.analyze(region, [(model.mi_of(r["ym"]), r["price"]) for r in valid], now_mi(), calib)
     if not res:
         return {"error": "거래가 3건 미만이라 예측할 수 없습니다."}
     build = max(r["build"] for r in rows)

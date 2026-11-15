@@ -1,4 +1,5 @@
 """국토교통부 아파트 매매 실거래가(공공데이터포털 오픈API) 수집 + SQLite 캐시."""
+import contextlib
 import sqlite3
 import threading
 import time
@@ -126,7 +127,18 @@ def fetch_month(key, lawd, ym, http_get=_http_get):
 _write_lock = threading.Lock()
 
 
+@contextlib.contextmanager
 def db():
+    """with db() as con: 끝나면 커밋하고 연결을 닫는다."""
+    con = _connect()
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
+
+
+def _connect():
     DB_PATH.parent.mkdir(exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
