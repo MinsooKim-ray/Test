@@ -40,6 +40,12 @@ class ParseTest(unittest.TestCase):
                 "<returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>")
         with self.assertRaisesRegex(molit.ApiError, "등록되지"):
             molit.parse_response(body)
+        # 실제 게이트웨이 응답(2026-11 확인): 코드가 errMsg 에 온다
+        live = ("<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</errMsg>"
+                "<returnAuthMsg>등록되지 않은 서비스키</returnAuthMsg><returnReasonCode>30</returnReasonCode>"
+                "</cmmMsgHeader></OpenAPI_ServiceResponse>")
+        with self.assertRaisesRegex(molit.ApiError, "1~2시간"):
+            molit.parse_response(live)
 
     def test_pagination_and_key_encoding(self):
         urls = []

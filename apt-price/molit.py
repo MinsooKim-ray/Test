@@ -59,9 +59,11 @@ def parse_response(xml_text):
         root = ET.fromstring(xml_text)
     except ET.ParseError as e:
         raise ApiError(f"응답을 해석할 수 없습니다: {xml_text[:200]!r}") from e
-    auth = root.findtext(".//returnAuthMsg")
-    if auth:  # 게이트웨이 오류(인증키 등)
-        raise ApiError(ERROR_HINTS.get(auth, auth))
+    if root.find(".//cmmMsgHeader") is not None:  # 게이트웨이 오류(인증키 등)
+        # 오류 코드가 errMsg 에 오는 형식과 returnAuthMsg 에 오는 형식이 모두 있다
+        parts = [(root.findtext(f".//{t}") or "").strip() for t in ("errMsg", "returnAuthMsg")]
+        hint = next((ERROR_HINTS[x] for x in parts if x in ERROR_HINTS), None)
+        raise ApiError(hint or " / ".join(x for x in parts if x) or "API 인증 오류")
     code = (root.findtext(".//resultCode") or "").strip()
     if code and code not in ("00", "000", "03"):  # 03 = 데이터 없음
         msg = (root.findtext(".//resultMsg") or "").strip()
