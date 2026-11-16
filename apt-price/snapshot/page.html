@@ -1,0 +1,283 @@
+<title>아파트 실거래가 예측</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 휴대폰 한 손 조작 기준의 한 단. 지역 → 단지 → 평형 → 결과 순으로 내려간다. */
+:root {
+  --bg: #f3f5f8; --surface: #ffffff; --border: #d5dbe3;
+  --text: #14202e; --text-2: #4a5868; --text-3: #738294;
+  --series-1: #2a78d6; --series-2: #eb6834; --note-bg: #e6eefb; --err: #b3261e;
+  --font-head: "IBM Plex Sans KR", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-body: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #18212b; --border: #2f3b49;
+    --text: #e8edf3; --text-2: #b3bfcc; --text-3: #8795a5;
+    --series-1: #3987e5; --series-2: #d95926; --note-bg: #1b2c47; --err: #f2867f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #18212b; --border: #2f3b49;
+  --text: #e8edf3; --text-2: #b3bfcc; --text-3: #8795a5;
+  --series-1: #3987e5; --series-2: #d95926; --note-bg: #1b2c47; --err: #f2867f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--font-body);
+  padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1, h2 { font-family: var(--font-head); margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: 22px; font-weight: 700; }
+h2 { font-size: 18px; font-weight: 600; }
+p { margin: 0; }
+.sub { color: var(--text-2); }
+.note { background: var(--note-bg); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+  display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lbl { font-family: var(--font-head); font-weight: 600; font-size: 14px; color: var(--text-2); }
+.seg, .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg button, .chips button { padding: 8px 14px; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 999px; cursor: pointer; min-height: 40px; }
+.seg button[aria-pressed=true], .chips button[aria-pressed=true] { border-color: var(--series-1);
+  box-shadow: inset 0 0 0 1px var(--series-1); font-weight: 700; }
+input[type=search] { width: 100%; padding: 11px 12px; font: inherit; font-size: 16px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.list { margin: 0; padding: 0; list-style: none; max-height: 264px; overflow: auto; }
+.list button { width: 100%; text-align: left; padding: 9px 10px; font: inherit; color: var(--text);
+  background: none; border: 0; border-radius: 6px; cursor: pointer; min-height: 44px; }
+.list button:hover, .list button[aria-current=true] { background: var(--bg); }
+.list small { color: var(--text-3); margin-left: 6px; }
+.hint { color: var(--text-3); font-size: 13px; }
+.err { color: var(--err); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } }
+.tile { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.tile .k { color: var(--text-2); font-size: 13px; }
+.tile .v { font: 700 22px/1.3 var(--font-head); font-variant-numeric: tabular-nums; }
+.tile .r { color: var(--text-2); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--text-2); font-size: 12.5px; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.chart { position: relative; }
+#chart { display: block; width: 100%; height: auto; touch-action: pan-y; }
+#chart text { fill: var(--text-3); font-size: 11.5px; font-family: var(--font-body); }
+#tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; }
+.basis { color: var(--text-2); font-size: 14px; margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-2); font-weight: 600; }
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:4px">
+    <h1>아파트 실거래가 예측</h1>
+    <p class="sub">국토교통부 실거래가로 현재 시세와 1~3년 뒤 가격 범위를 추정합니다.</p>
+  </header>
+  <p class="note" id="asof">자료를 불러오는 중입니다.</p>
+
+  <div class="card">
+    <span class="lbl">1. 지역</span>
+    <div class="seg" id="regions"></div>
+    <label class="lbl" for="apt">2. 아파트 이름</label>
+    <input type="search" id="apt" placeholder="지역을 먼저 선택하세요" autocomplete="off" disabled>
+    <ul class="list" id="aptList"></ul>
+  </div>
+
+  <div class="card" id="result" hidden>
+    <div>
+      <h2 id="title"></h2>
+      <p class="sub" id="meta"></p>
+    </div>
+    <div class="chips" id="areas"></div>
+    <p class="hint err" id="resErr" hidden></p>
+    <div id="body" style="display:flex;flex-direction:column;gap:12px">
+      <div class="tiles" id="tiles"></div>
+      <div class="legend">
+        <span><i style="width:8px;height:8px;border-radius:50%;background:var(--series-1);opacity:.5"></i>실거래</span>
+        <span><i style="width:6px;height:6px;border-radius:50%;border:1.2px solid var(--text-3)"></i>특이 거래(제외)</span>
+        <span><i style="width:18px;height:2px;background:var(--series-1)"></i>월 중위가</span>
+        <span><i style="width:18px;border-top:2px dashed var(--series-2)"></i>예측</span>
+        <span><i style="width:14px;height:10px;background:var(--series-2);opacity:.2"></i>예측 구간(80%)</span>
+      </div>
+      <div class="chart"><svg id="chart" role="img" aria-label="실거래가 추이와 예측"></svg><div id="tip" hidden></div></div>
+      <ul class="basis" id="basis"></ul>
+      <h2>최근 실거래</h2>
+      <div class="scroll"><table><thead><tr><th>계약일</th><th>전용면적</th><th>층</th><th>거래금액</th></tr></thead><tbody id="rows"></tbody></table></div>
+    </div>
+  </div>
+  <p class="hint">과거 거래 추세만으로 계산한 참고용 추정치입니다. 금리·정책·공급 등 외부 요인은 반영되지 않으며, 투자 판단의 근거로 쓰기에는 부족합니다.</p>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const norm = s => s.replace(/\s+/g, '').toLowerCase();
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const svg = (tag, attrs = {}) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const won = (v, short) => v >= 10000 ? (short ? +(v / 10000).toFixed(2) : (v / 10000).toFixed(2)) + '억' : Math.round(v).toLocaleString() + '만';
+const pct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
+const ymd = t => `${Math.floor(t.ym / 100)}.${String(t.ym % 100).padStart(2, '0')}.${String(t.day).padStart(2, '0')}`;
+const mi = ym => Math.floor(ym / 100) * 12 + ym % 100 - 1;
+const median = a => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+
+let meta = null, complexes = [], complex = null, shown = null, timer = null;
+const cache = {};
+
+fetch('data/index.json').then(r => r.json()).then(d => {
+  meta = d;
+  $('#asof').textContent = `${d.exported.replaceAll('-', '.')} 기준으로 받아 둔 자료입니다. 그 이후의 거래는 반영되지 않습니다. 담긴 지역: ${d.regions.map(r => r.name).join(', ')}.`;
+  $('#regions').replaceChildren(...d.regions.map(r => el('button', { type: 'button', id: 'rg-' + r.code,
+    textContent: r.name.split(' ').slice(-1)[0], title: r.name, onclick: () => pickRegion(r) })));
+}).catch(() => { $('#asof').textContent = '자료를 불러오지 못했습니다. 페이지를 새로 고쳐 주세요.'; $('#asof').classList.add('err'); });
+
+async function pickRegion(r) {
+  [...$('#regions').children].forEach(b => b.setAttribute('aria-pressed', b.id === 'rg-' + r.code));
+  $('#result').hidden = true;
+  $('#apt').disabled = true;
+  $('#apt').placeholder = '불러오는 중…';
+  $('#aptList').replaceChildren();
+  try {
+    complexes = cache[r.code] || (cache[r.code] = await fetch(`data/${r.code}.json`).then(x => x.json()));
+  } catch (e) {
+    $('#apt').placeholder = '이 지역 자료를 불러오지 못했습니다';
+    return;
+  }
+  $('#apt').disabled = false;
+  $('#apt').placeholder = `단지 ${r.complexes.toLocaleString()}곳에서 검색 (예: 래미안, 자이)`;
+  $('#apt').value = '';
+  searchApt();
+}
+
+$('#apt').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(searchApt, 150); });
+
+function searchApt() {
+  const q = norm($('#apt').value);
+  const hits = complexes.filter(c => !q || norm(c.name).includes(q) || norm(c.dong).includes(q)).slice(0, 40);
+  const items = hits.map(c => el('li', {}, el('button', { type: 'button', onclick: () => pickComplex(c) },
+    c.name, el('small', { textContent: `${c.dong} · ${c.build}년 · 거래 ${c.n}건` }))));
+  $('#aptList').replaceChildren(...(items.length ? items : [el('li', { className: 'hint', textContent: '일치하는 단지가 없습니다.' })]));
+}
+
+function pickComplex(c) {
+  complex = c;
+  const best = c.areas.reduce((a, b) => b.t.length > a.t.length ? b : a);
+  $('#areas').replaceChildren(...c.areas.map(a => el('button', { type: 'button',
+    textContent: `전용 ${a.area}㎡ (${a.t.length}건)`, onclick: () => show(a) })));
+  show(best);
+  $('#result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function show(a) {
+  [...$('#areas').children].forEach((b, i) => b.setAttribute('aria-pressed', complex.areas[i] === a));
+  $('#result').hidden = false;
+  $('#title').textContent = complex.name;
+  const trades = a.t.map(([ym, day, price, floor, area, odd]) => ({ ym, day, price, floor, area, odd }));
+  const since = complex.build * 100 + 1 > meta.from_ym ? `${complex.build}년 입주 이후` : '최근 10년';
+  $('#meta').textContent = `${complex.dong} · ${complex.build}년 준공 · 분석 기간: ${since} · 거래 ${trades.length}건` + (a.c ? ` (해제 ${a.c}건 제외)` : '');
+  const r = a.r;
+  $('#body').hidden = !r;
+  $('#resErr').hidden = !!r;
+  $('#resErr').textContent = r ? '' : '거래가 3건 미만이라 예측할 수 없습니다.';
+  if (!r) { shown = null; return; }
+
+  const tile = (k, f, base) => el('div', { className: 'tile' },
+    el('div', { className: 'k', textContent: k }),
+    el('div', { className: 'v', textContent: won(f.base) }),
+    el('div', { className: 'r', textContent: `${won(f.low)} ~ ${won(f.high)}` + (base ? ` · ${pct(f.base / base - 1)}` : '') }));
+  $('#tiles').replaceChildren(tile('현재 추정 시세', r.now), ...r.f.map(f => tile(`${f.months / 12}년 뒤 예측`, f, r.now.base)));
+
+  const odd = trades.filter(t => t.odd).length, bt = r.bt;
+  const basis = [
+    `현재 시세: ${r.window ? `최근 ${r.window}개월` : '전체 기간'} 거래 ${r.n_used}건을 지역 시세 흐름으로 보정해 최근 거래에 가중.`,
+    `예측 중심값: 향후 1년은 이 지역의 최근 12개월 시세 변화율 ${pct(r.g)}를 적용(-10%~+12%로 제한). 1년 이후는 방향을 예측하지 않고 같은 수준으로 두며 구간만 넓힙니다.`,
+    ...(odd ? [`특이 거래 ${odd}건(주변 거래보다 25% 넘게 높거나 낮음)은 차트에 회색으로 표시하고 계산에서 제외.`] : []),
+    `예측 구간: 과거 검증에서 실제로 빗나간 정도에 맞춰 넓힘. 1년 구간은 기본 폭의 ${r.k.toFixed(2)}배` +
+      (r.k_region ? ` (이 지역 검증 ${r.k_n}건 기준 ${r.k_region.toFixed(2)}배에 단지 자체 오차를 반영).` : ' (지역 검증 자료가 부족해 기본 배율 사용).'),
+    bt ? `검증: 과거 ${bt.n}개 시점에서 같은 방법으로 1년 뒤를 예측했을 때 평균 오차 ${(bt.mape * 100).toFixed(1)}%, 보정된 구간 적중 ${Math.round(bt.coverage * bt.n)}/${bt.n}회.`
+       : '검증: 거래 이력이 짧아 과거 시점 검증을 할 수 없습니다. 예측 신뢰도가 낮습니다.',
+  ];
+  $('#basis').replaceChildren(...basis.map(t => el('li', { textContent: t })));
+  $('#rows').replaceChildren(...trades.slice(-15).reverse().map(t => el('tr', {},
+    el('td', { textContent: ymd(t) }), el('td', { textContent: t.area.toFixed(2) + '㎡' }),
+    el('td', { textContent: t.floor + '층' }), el('td', { textContent: won(t.price) + (t.odd ? ' (특이)' : '') }))));
+
+  const by = new Map();
+  for (const t of trades) if (!t.odd) by.set(t.ym, [...(by.get(t.ym) || []), t.price]);
+  shown = { trades, now: r.now, forecasts: r.f, monthly: [...by].sort((x, y) => x[0] - y[0]).map(([ym, v]) => ({ ym, median: median(v) })) };
+  draw(shown);
+}
+
+function draw(d) {
+  const c = $('#chart'), tip = $('#tip');
+  const W = Math.max(300, Math.round(c.parentElement.clientWidth)), H = Math.round(Math.min(400, Math.max(250, W * 0.46)));
+  const L = 46, R = 58, T = 14, B = 28;
+  c.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  c.replaceChildren();
+  tip.hidden = true;
+  const now = mi(meta.now_ym) + 0.5;
+  const pts = d.trades.map(t => ({ x: mi(t.ym) + (t.day - 1) / 31, y: t.price, odd: t.odd, tip: `${ymd(t)} · ${t.floor}층 · ${won(t.price)}` + (t.odd ? ' · 특이 거래(계산 제외)' : '') }));
+  const fc = [{ ...d.now, months: 0 }, ...d.forecasts];
+  const x0 = Math.floor(pts[0].x), x1 = now + 36;
+  const ys = [...pts.map(p => p.y), ...fc.flatMap(f => [f.low, f.high])];
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  const maxTicks = H < 300 ? 5 : 6;
+  const step = [1000, 2500, 5000, 10000, 25000, 50000, 100000, 200000].find(s => (hi - lo) / s <= maxTicks) || 500000;
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const X = v => L + (v - x0) / (x1 - x0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const line = (a, attrs) => c.append(svg('line', { x1: a[0], y1: a[1], x2: a[2], y2: a[3], ...attrs }));
+  const text = (x, y, s, attrs = {}) => { const t = svg('text', { x, y, ...attrs }); t.textContent = s; c.append(t); };
+
+  for (let v = lo; v <= hi; v += step) {
+    line([L, Y(v), W - R, Y(v)], { stroke: 'var(--border)', 'stroke-width': 1 });
+    text(L - 6, Y(v) + 4, v ? won(v, true) : '0', { 'text-anchor': 'end' });
+  }
+  const pxPerYear = (W - L - R) / ((x1 - x0) / 12), every = Math.ceil(38 / pxPerYear);
+  for (let m = Math.ceil(x0 / 12) * 12; m <= x1; m += 12 * every) text(X(m), H - 8, m / 12 + '', { 'text-anchor': 'middle' });
+  line([X(now), T, X(now), H - B], { stroke: 'var(--text-3)', 'stroke-width': 1, 'stroke-dasharray': '2 3' });
+  text(X(now) - 5, T + 10, '현재', { 'text-anchor': 'end' });
+
+  const fx = f => X(now + f.months);
+  c.append(svg('polygon', { fill: 'var(--series-2)', opacity: .18,
+    points: [...fc.map(f => `${fx(f)},${Y(f.high)}`), ...fc.slice().reverse().map(f => `${fx(f)},${Y(f.low)}`)].join(' ') }));
+  const r0 = W < 500 ? 2.4 : 3;
+  for (const p of pts) c.append(svg('circle', p.odd ? { cx: X(p.x), cy: Y(p.y), r: r0, fill: 'none', stroke: 'var(--text-3)', 'stroke-width': 1.2 }
+    : { cx: X(p.x), cy: Y(p.y), r: r0, fill: 'var(--series-1)', opacity: .45 }));
+  c.append(svg('polyline', { fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round',
+    points: d.monthly.map(m => `${X(mi(m.ym) + .5)},${Y(m.median)}`).join(' ') }));
+  c.append(svg('polyline', { fill: 'none', stroke: 'var(--series-2)', 'stroke-width': 2, 'stroke-dasharray': '6 4',
+    points: fc.map(f => `${fx(f)},${Y(f.base)}`).join(' ') }));
+  const hot = pts.map(p => ({ px: X(p.x), py: Y(p.y), tip: p.tip }));
+  for (const f of fc) {
+    c.append(svg('circle', { cx: fx(f), cy: Y(f.base), r: 4.5, fill: 'var(--series-2)', stroke: 'var(--surface)', 'stroke-width': 2 }));
+    hot.push({ px: fx(f), py: Y(f.base), tip: `${f.months ? f.months / 12 + '년 뒤 예측' : '현재 추정'} · ${won(f.base)} (${won(f.low)} ~ ${won(f.high)})` });
+  }
+  const last = fc[fc.length - 1];
+  text(fx(last) + 7, Y(last.base) + 4, won(last.base, true), { style: 'fill:var(--text);font-weight:700' });
+
+  const ring = svg('circle', { r: 6, fill: 'none', stroke: 'var(--text)', 'stroke-width': 1.5, visibility: 'hidden' });
+  c.append(ring);
+  const hide = () => { ring.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+  const point = e => {
+    const b = c.getBoundingClientRect(), k = W / b.width;
+    const mx = (e.clientX - b.left) * k, my = (e.clientY - b.top) * k;
+    let best = null, bd = 30 * 30;
+    for (const h of hot) { const dd = (h.px - mx) ** 2 + (h.py - my) ** 2; if (dd < bd) { bd = dd; best = h; } }
+    if (!best) return hide();
+    ring.setAttribute('cx', best.px); ring.setAttribute('cy', best.py); ring.setAttribute('visibility', 'visible');
+    tip.textContent = best.tip; tip.hidden = false;
+    const tx = best.px / k, flip = tx > b.width / 2;
+    tip.style.left = flip ? '' : tx + 12 + 'px'; tip.style.right = flip ? b.width - tx + 12 + 'px' : '';
+    tip.style.top = Math.max(0, best.py / k - 36) + 'px';
+  };
+  c.onpointermove = point; c.onpointerdown = point;
+  c.onpointerleave = e => { if (e.pointerType === 'mouse') hide(); };
+}
+
+let lastW = 0;
+new ResizeObserver(() => {
+  const w = $('#chart').parentElement.clientWidth;
+  if (shown && w && Math.abs(w - lastW) > 4) { lastW = w; draw(shown); }
+}).observe(document.querySelector('main'));
+</script>

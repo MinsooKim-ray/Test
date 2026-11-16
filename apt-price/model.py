@@ -174,11 +174,13 @@ def band_k(resid, prior):
     return max(1.0, math.sqrt(ss / (len(resid) + K_PRIOR_N)))
 
 
-def analyze(region_rows, trades, now_mi, calib=None):
+def analyze(region_rows, trades, now_mi, calib=None, idx=None):
     """region_rows: 시군구 전체 (mi, ㎡당 가격). trades: 선택 평형 (mi, 가격).
-    calib: region_k() 결과. 없는 기간은 K_DEFAULT 를 지역 배율로 쓴다."""
+    calib: region_k() 결과. 없는 기간은 K_DEFAULT 를 지역 배율로 쓴다.
+    idx: 이미 구한 지역 지수가 있으면 넘겨서 다시 계산하지 않는다."""
     calib = calib or {}
-    idx = region_index(region_rows, now_mi)
+    if idx is None:
+        idx = region_index(region_rows, now_mi)
     flags = outlier_flags(trades, idx)
     trades = [t for t, bad in zip(trades, flags) if not bad]
     bt = backtest(trades, idx, now_mi)
